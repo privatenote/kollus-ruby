@@ -8,10 +8,21 @@ class Kollus
     @token = api_token
   end
 
-  def media(media_content_key, media_profile_key = nil, awt_code = nil, expire_time = 7200, play_list = nil)
+  def detail(upload_key)
+    api_uri = URI("http://api.kr.kollus.com/0//media/library/media_content/#{upload_key}?access_token=#{@token}")
+
+    response = Net::HTTP.get(api_uri)
+    puts response
+    response = JSON.parse response
+
+    return nil unless response['error'] == 0
+    return response["result"]
+  end
+
+  def media(media_content_key, user_id = "not_logged_on", media_profile_key = nil, awt_code = nil, expire_time = 7200, play_list = nil)
     api_uri = URI('http://api.kr.kollus.com/0/media_auth/media_token/get_media_link_by_userid?access_token=' + @token)
     params = {
-      client_user_id: @id,
+      client_user_id: user_id,
       security_key: @key,
       media_content_key: media_content_key,
       media_profile_key: media_profile_key,
@@ -52,6 +63,7 @@ class Kollus
 
 
   def upload(title = nil, expire_time = 600, encrypted = true, audio = false)
+    tries = 3
     api_uri = URI('http://api.kr.kollus.com/0/media_auth/upload/create_url.json?access_token=' + @token)
     params = {
       # 값의 범위는 0 < expire_time <= 21600 입니다. 빈값을 보내거나 항목 자체를 제거하면 기본 600초로 설정됩니다.
@@ -74,12 +86,12 @@ class Kollus
     response = JSON.parse response.body
     # TODO: Error handling
 
-    unless response['error'] == 0
-      # TODO: Error handling
-      return nil
-    end
+    raise KollusError, response unless response['error'] == 0
 
     UploadSession.new response['result']
+  rescue KollusError => e
+    retry unless (tries -= 1).zero?
+    raise e
   end
 
   class UploadSession
@@ -92,5 +104,11 @@ class Kollus
     def url; @url end
     def key; @key end
     def expires_at; @expires_at end
+  end
+end
+
+class KollusError < StandardError
+  def initialize(msg = "Error with Kollus")
+    super(msg)
   end
 end
